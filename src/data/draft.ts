@@ -1,8 +1,8 @@
-export type Category = "A" | "B" | "C" | "D";
+export type Category = string;
 export type Role = "Batsman" | "Bowler" | "All-Rounder" | "Wicket Keeper";
 
 export type Player = {
-  id: string;
+  id: string | number;
   name: string;
   category: Category;
   role: Role;
@@ -10,9 +10,10 @@ export type Player = {
 };
 
 export type Team = {
-  id: string;
+  id: string | number;
   name: string;
   short: string;
+  logo?: string;
 };
 
 export const TEAMS: Team[] = [

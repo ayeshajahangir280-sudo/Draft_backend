@@ -8,7 +8,7 @@ export function DraftOrder({
 }: {
   order: Team[];
   currentIndex: number;
-  picks: Record<string, string[]>;
+  picks: Record<string, Array<string | number>>;
   onOpenTeam: (t: Team) => void;
 }) {
   const current = order[currentIndex];
@@ -54,7 +54,7 @@ export function DraftOrder({
                   <span className="text-[10px] font-bold tracking-widest text-accent">CURRENT</span>
                 )}
                 <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-secondary-foreground">
-                  {(picks[t.id] ?? []).length}
+                  {(picks[String(t.id)] ?? []).length}
                 </span>
               </button>
             </li>

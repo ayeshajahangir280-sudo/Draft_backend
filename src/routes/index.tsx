@@ -1,12 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DraftOrder } from "@/components/draft/DraftOrder";
 import { PlayerCard } from "@/components/draft/PlayerCard";
 import {
+  DEFAULT_DRAFT_ID,
+  draftWsUrl,
+  fetchDraftState,
+  randomizeOrStart,
+  selectDraftPlayer,
+  setDraftCategory,
+  startNextRound as startNextRoundApi,
+  type DraftEvent,
+  type DraftPick,
+  type DraftState,
+} from "@/lib/draftApi";
+import {
   CATEGORIES,
-  PLAYERS,
-  TEAMS,
-  shuffle,
   type Category,
   type Player,
   type Team,
@@ -31,56 +40,243 @@ export const Route = createFileRoute("/")({
   component: DraftScreen,
 });
 
-type Pick = { player: Player; team: Team; round: number };
+type Pick = { player: Player; team: Team; round: number; pick_number?: number };
+type ConnectionStatus = "SYNCING" | "LIVE" | "RECONNECTING" | "OFFLINE";
 
 function DraftScreen() {
-  const [order, setOrder] = useState<Team[]>(() => shuffle(TEAMS));
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const draftId = DEFAULT_DRAFT_ID;
+  const [draftState, setDraftState] = useState<DraftState | null>(null);
+  const [connection, setConnection] = useState<ConnectionStatus>("SYNCING");
+  const [error, setError] = useState<string | null>(null);
+  const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const [round, setRound] = useState(1);
   const [picks, setPicks] = useState<Pick[]>([]);
   const [category, setCategory] = useState<Category>("A");
   const [confirming, setConfirming] = useState<Player | null>(null);
   const [lastPick, setLastPick] = useState<Pick | null>(null);
   const [rosterTeam, setRosterTeam] = useState<Team | null>(null);
+  const lastRevision = useRef(0);
+  const syncingRef = useRef(false);
 
-  const takenIds = useMemo(() => new Set(picks.map((p) => p.player.id)), [picks]);
-  const available = useMemo(
-    () => PLAYERS.filter((p) => !takenIds.has(p.id) && p.category === category),
-    [takenIds, category],
+  const applyState = useCallback((state: DraftState) => {
+    if (state.revision < lastRevision.current) return;
+    lastRevision.current = state.revision;
+    setDraftState(state);
+    setRound(state.current_round || 1);
+    setCategory(state.active_category);
+    const allPicks = state.teams.flatMap((team) =>
+      team.picks.map((player) => ({ player, team, round: player.round_number, pick_number: player.pick_number })),
+    );
+    allPicks.sort((a, b) => (a.pick_number ?? 0) - (b.pick_number ?? 0));
+    setPicks(allPicks);
+    if (state.latest_pick) {
+      setLastPick({
+        player: state.latest_pick.player,
+        team: state.latest_pick.team,
+        round: state.latest_pick.round_number,
+        pick_number: state.latest_pick.pick_number,
+      });
+    } else {
+      setLastPick(null);
+    }
+  }, []);
+
+  const syncState = useCallback(async () => {
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    setConnection((current) => (current === "LIVE" ? "SYNCING" : current));
+    try {
+      const state = await fetchDraftState(draftId);
+      applyState(state);
+      setError(null);
+      setConnection("LIVE");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sync draft state.");
+      setConnection("OFFLINE");
+    } finally {
+      syncingRef.current = false;
+    }
+  }, [applyState, draftId]);
+
+  const applyEvent = useCallback(
+    (event: DraftEvent) => {
+      if (event.revision <= lastRevision.current) return;
+      if (event.revision > lastRevision.current + 1) {
+        void syncState();
+        return;
+      }
+      lastRevision.current = event.revision;
+      if (event.type === "category.changed") {
+        setCategory(event.active_category);
+        setDraftState((state) =>
+          state
+            ? {
+                ...state,
+                revision: event.revision,
+                active_category: event.active_category,
+                draft: { ...state.draft, active_category: event.active_category, revision: event.revision },
+              }
+            : state,
+        );
+        void syncState();
+        return;
+      }
+      if (event.type === "round.started") {
+        setRound(event.round_number);
+        setLastPick(null);
+        setDraftState((state) =>
+          state
+            ? {
+                ...state,
+                revision: event.revision,
+                current_round: event.round_number,
+                current_turn: event.turn_order.find((turn) => turn.status === "ACTIVE") ?? null,
+                turn_order: event.turn_order,
+                draft: { ...state.draft, status: "LIVE", current_round: event.round_number, revision: event.revision },
+              }
+            : state,
+        );
+        return;
+      }
+      setPendingActionId(null);
+      setConfirming(null);
+      const pick = event.pick;
+      setPicks((current) =>
+        current.some((item) => item.player.id === pick.player.id)
+          ? current
+          : [...current, { player: pick.player, team: pick.team, round: pick.round_number, pick_number: pick.pick_number }],
+      );
+      setLastPick({ player: pick.player, team: pick.team, round: pick.round_number, pick_number: pick.pick_number });
+      setDraftState((state) => {
+        if (!state) return state;
+        const turnOrder = state.turn_order.map((turn) => {
+          if (turn.id === event.completed_turn_id) {
+            return { ...turn, status: "COMPLETED" as const, selected_player_id: pick.player.id as number };
+          }
+          if (event.next_turn && turn.id === event.next_turn.id) return event.next_turn;
+          return turn;
+        });
+        return {
+          ...state,
+          revision: event.revision,
+          latest_pick: pick,
+          current_turn: event.next_turn,
+          turn_order: turnOrder,
+          available_players: state.available_players.filter((player) => player.id !== pick.player.id),
+          draft: {
+            ...state.draft,
+            revision: event.revision,
+            status: event.round_completed ? "ROUND_COMPLETE" : state.draft.status,
+          },
+          teams: state.teams.map((team) =>
+            team.id === pick.team.id && !team.picks.some((player) => player.id === pick.player.id)
+              ? { ...team, picks: [...team.picks, { ...pick.player, round_number: pick.round_number, pick_number: pick.pick_number }] }
+              : team,
+          ),
+        };
+      });
+    },
+    [syncState],
   );
+
+  useEffect(() => {
+    void syncState();
+  }, [syncState]);
+
+  useEffect(() => {
+    let socket: WebSocket | null = null;
+    let stopped = false;
+    let retry = 0;
+    let reconnectTimer: number | undefined;
+
+    function connect() {
+      if (stopped) return;
+      socket = new WebSocket(draftWsUrl(draftId));
+      socket.onopen = () => {
+        retry = 0;
+        setConnection("SYNCING");
+        void syncState();
+      };
+      socket.onmessage = (message) => {
+        try {
+          applyEvent(JSON.parse(message.data) as DraftEvent);
+          setConnection("LIVE");
+        } catch {
+          void syncState();
+        }
+      };
+      socket.onclose = () => {
+        if (stopped) return;
+        setConnection("RECONNECTING");
+        const delay = Math.min(8000, 1000 * 2 ** retry) + Math.floor(Math.random() * 300);
+        retry += 1;
+        reconnectTimer = window.setTimeout(connect, delay);
+      };
+      socket.onerror = () => {
+        socket?.close();
+      };
+    }
+
+    connect();
+    return () => {
+      stopped = true;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      socket?.close();
+    };
+  }, [applyEvent, draftId, syncState]);
+
+  const order = useMemo(() => draftState?.turn_order.map((turn) => turn.team) ?? [], [draftState]);
+  const currentIndex = useMemo(() => {
+    const index = draftState?.turn_order.findIndex((turn) => turn.status === "ACTIVE") ?? -1;
+    return index >= 0 ? index : order.length;
+  }, [draftState, order.length]);
+  const takenIds = useMemo(() => new Set(picks.map((p) => p.player.id)), [picks]);
+  const available = useMemo(() => draftState?.available_players.filter((p) => !takenIds.has(p.id) && p.category === category) ?? [], [draftState, takenIds, category]);
   const picksByTeam = useMemo(() => {
-    const m: Record<string, string[]> = {};
-    for (const p of picks) (m[p.team.id] ??= []).push(p.player.id);
+    const m: Record<string, Array<string | number>> = {};
+    for (const p of picks) (m[String(p.team.id)] ??= []).push(p.player.id);
     return m;
   }, [picks]);
 
   const currentTeam = order[currentIndex];
   const roundComplete = currentIndex >= order.length;
 
-  function confirm() {
+  async function confirm() {
     if (!confirming || !currentTeam) return;
-    const pick: Pick = { player: confirming, team: currentTeam, round };
-    setPicks((p) => [...p, pick]);
-    setLastPick(pick);
-    setConfirming(null);
-    setCurrentIndex((i) => i + 1);
+    const actionId = crypto.randomUUID();
+    setPendingActionId(actionId);
+    setError(null);
+    try {
+      const result = await selectDraftPlayer(draftId, confirming.id, actionId);
+      applyEvent(result.event);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Selection could not be confirmed.");
+      setPendingActionId(null);
+      void syncState();
+    }
   }
 
-  function startNextRound() {
-    setOrder(shuffle(TEAMS));
-    setCurrentIndex(0);
-    setRound((r) => r + 1);
-    setLastPick(null);
+  async function startNextRound() {
+    setError(null);
+    try {
+      const event = draftState?.draft.status === "ROUND_COMPLETE" ? await startNextRoundApi(draftId) : await randomizeOrStart(draftId);
+      applyEvent(event);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start round.");
+      void syncState();
+    }
   }
 
-  function resetDemo() {
-    setOrder(shuffle(TEAMS));
-    setCurrentIndex(0);
-    setRound(1);
-    setPicks([]);
-    setLastPick(null);
-    setConfirming(null);
-    setCategory("A");
+  async function changeCategory(nextCategory: Category) {
+    setCategory(nextCategory);
+    setError(null);
+    try {
+      const event = await setDraftCategory(draftId, nextCategory);
+      applyEvent(event);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not change category.");
+      void syncState();
+    }
   }
 
   return (
@@ -97,12 +293,16 @@ function DraftScreen() {
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="tracking-[0.2em]">DEMO ADMIN CONTROLS</span>
           <span className="opacity-40">|</span>
+          <span className={connection === "LIVE" ? "text-emerald-400" : connection === "SYNCING" ? "text-accent" : "text-destructive"}>
+            {connection}
+          </span>
+          <span className="opacity-40">|</span>
           <span>Active Category</span>
           {CATEGORIES.map((c) => (
             <button
               key={c}
               type="button"
-              onClick={() => setCategory(c)}
+              onClick={() => changeCategory(c)}
               className={`h-7 w-7 rounded border text-xs font-bold transition-colors ${
                 category === c
                   ? "border-accent bg-accent text-accent-foreground"
@@ -115,8 +315,7 @@ function DraftScreen() {
           <button
             type="button"
             onClick={() => {
-              setOrder(shuffle(TEAMS));
-              setCurrentIndex(0);
+              void startNextRound();
             }}
             className="rounded border border-border px-2 py-1 hover:border-accent/60"
           >
@@ -131,13 +330,18 @@ function DraftScreen() {
           </button>
           <button
             type="button"
-            onClick={resetDemo}
+            onClick={() => void syncState()}
             className="rounded border border-border px-2 py-1 hover:border-destructive/60"
           >
-            Reset Demo
+            Sync
           </button>
         </div>
       </header>
+      {error && (
+        <div className="border-b border-destructive/30 bg-destructive/10 px-6 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
 
       <div className="grid gap-4 p-4 lg:h-[calc(100vh-57px)] lg:grid-cols-[260px_1fr_360px]">
         <section className="min-h-0 rounded-2xl border border-border bg-card/40 p-4">
@@ -230,7 +434,7 @@ function DraftScreen() {
               <PlayerCard
                 key={p.id}
                 player={p}
-                disabled={roundComplete}
+                disabled={roundComplete || pendingActionId !== null || connection === "OFFLINE"}
                 onSelect={setConfirming}
               />
             ))}
@@ -274,9 +478,10 @@ function DraftScreen() {
             <button
               type="button"
               onClick={confirm}
+              disabled={pendingActionId !== null}
               className="rounded-lg bg-accent px-5 py-2 text-sm font-bold tracking-wide text-accent-foreground transition-transform hover:scale-105"
             >
-              Confirm Selection
+              {pendingActionId ? "Confirming..." : "Confirm Selection"}
             </button>
           </div>
         </Overlay>
