@@ -78,6 +78,9 @@ class AdminProjectViewSet(viewsets.ModelViewSet):
             category = Category.objects.filter(id=category_id, project=project).first() if category_id else None
             if category_id and not category:
                 return Response({"detail": "Category must belong to this project."}, status=400)
+            if category:
+                # Keep the legacy category label synchronized with the project FK.
+                data["category"] = category.name
             serializer = PlayerSerializer(data=data)
             serializer.is_valid(raise_exception=True)
             player = serializer.save(project=project, category_ref=category, category=category.name if category else data.get("category", ""), playing_role=data.get("role", data.get("playing_role", "")))
