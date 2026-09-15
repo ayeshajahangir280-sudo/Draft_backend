@@ -76,7 +76,6 @@ class TeamSerializer(serializers.ModelSerializer):
 
 
 class CategorySerializer(serializers.ModelSerializer):
-    project_id = serializers.IntegerField(required=False)
     class Meta:
         model = Category
         fields = ["id", "name", "sort_order", "is_active"]
