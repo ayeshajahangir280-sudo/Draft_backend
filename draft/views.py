@@ -10,7 +10,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Category, Draft, DraftPick, DraftPlayer, DraftTeam, Player, Team, UserProfile, UserRole
+from .models import Category, Draft, DraftPick, DraftPlayer, DraftTeam, Player, Project, Team, UserProfile, UserRole
 from .permissions import IsAdminRole
 from .selectors import get_draft_state
 from .serializers import (
@@ -21,6 +21,7 @@ from .serializers import (
     SetCategorySerializer,
     TeamSerializer,
     CategorySerializer,
+    ProjectSerializer, AdminUserSerializer,
     UserSerializer,
     logout_user,
 )
@@ -35,6 +36,41 @@ class LoginView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         return Response(UserSerializer(user).data)
+
+class AdminUserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.select_related("profile").order_by("username")
+    serializer_class = AdminUserSerializer
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+class AdminProjectViewSet(viewsets.ModelViewSet):
+    queryset = Project.objects.all()
+    serializer_class = ProjectSerializer
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    @action(detail=True, methods=["get", "post"], url_path="categories")
+    def categories(self, request, pk=None):
+        project = self.get_object()
+        if request.method == "POST":
+            serializer = CategorySerializer(data={**request.data, "project_id": project.id})
+            serializer.is_valid(raise_exception=True)
+            category = Category.objects.create(project=project, name=serializer.validated_data["name"], sort_order=serializer.validated_data.get("sort_order", 0))
+            return Response(CategorySerializer(category).data, status=201)
+        return Response(CategorySerializer(project.categories.all(), many=True).data)
+
+    @action(detail=True, methods=["get", "post"], url_path="players")
+    def players(self, request, pk=None):
+        project = self.get_object()
+        if request.method == "POST":
+            data = request.data.copy()
+            category_id = data.get("category_ref") or data.get("category_id")
+            category = Category.objects.filter(id=category_id, project=project).first() if category_id else None
+            if category_id and not category:
+                return Response({"detail": "Category must belong to this project."}, status=400)
+            serializer = PlayerSerializer(data=data)
+            serializer.is_valid(raise_exception=True)
+            player = serializer.save(project=project, category_ref=category, category=category.name if category else data.get("category", ""), playing_role=data.get("role", data.get("playing_role", "")))
+            return Response(PlayerSerializer(player).data, status=201)
+        return Response(PlayerSerializer(project.players.select_related("category_ref"), many=True).data)
 
 
 class LogoutView(APIView):

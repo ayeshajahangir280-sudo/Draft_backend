@@ -2,7 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
-    AdminCategoryViewSet, AdminManagerViewSet, AdminPlayerViewSet, AdminTeamViewSet,
+    AdminCategoryViewSet, AdminManagerViewSet, AdminPlayerViewSet, AdminTeamViewSet, AdminUserViewSet, AdminProjectViewSet,
     DraftViewSet, LoginView, LogoutView, me,
 )
 
@@ -12,6 +12,8 @@ router.register("admin/categories", AdminCategoryViewSet, basename="admin-catego
 router.register("admin/teams", AdminTeamViewSet, basename="admin-team")
 router.register("admin/players", AdminPlayerViewSet, basename="admin-player")
 router.register("admin/managers", AdminManagerViewSet, basename="admin-manager")
+router.register("admin/users", AdminUserViewSet, basename="admin-user")
+router.register("admin/projects", AdminProjectViewSet, basename="admin-project")
 
 urlpatterns = [
     path("auth/login/", LoginView.as_view()),

@@ -2,7 +2,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from .models import Category, Draft, DraftPick, DraftRound, DraftTeam, DraftTurn, Player, Team, UserRole
+from .models import Category, Draft, DraftPick, DraftRound, DraftTeam, DraftTurn, Player, Project, Team, UserRole
 
 
 def absolute_media_url(request, value):
@@ -20,6 +20,28 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "username", "first_name", "last_name", "role", "team_id", "active"]
+
+class AdminUserSerializer(serializers.ModelSerializer):
+    role = serializers.ChoiceField(choices=UserRole.choices, write_only=True, default=UserRole.MANAGER)
+    password = serializers.CharField(write_only=True, required=False)
+    role_name = serializers.CharField(source="profile.role", read_only=True)
+    class Meta:
+        model = User
+        fields = ["id", "username", "email", "first_name", "last_name", "password", "role", "role_name", "is_active"]
+    def create(self, validated_data):
+        role = validated_data.pop("role", UserRole.MANAGER)
+        password = validated_data.pop("password", None)
+        user = User(**validated_data)
+        user.set_password(password or User.objects.make_random_password())
+        user.save()
+        from .models import UserProfile
+        UserProfile.objects.update_or_create(user=user, defaults={"role": role})
+        return user
+
+class ProjectSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = ["id", "name", "description", "is_active", "created_at"]
 
 
 class LoginSerializer(serializers.Serializer):
@@ -54,6 +76,7 @@ class TeamSerializer(serializers.ModelSerializer):
 
 
 class CategorySerializer(serializers.ModelSerializer):
+    project_id = serializers.IntegerField(required=False)
     class Meta:
         model = Category
         fields = ["id", "name", "sort_order", "is_active"]
@@ -64,7 +87,7 @@ class PlayerSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Player
-        fields = ["id", "name", "photo", "category", "category_ref", "role", "is_active"]
+        fields = ["id", "project", "name", "photo", "category", "category_ref", "role", "is_active"]
     category_ref = serializers.PrimaryKeyRelatedField(read_only=True)
 
 

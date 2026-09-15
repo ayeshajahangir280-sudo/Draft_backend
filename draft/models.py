@@ -6,6 +6,22 @@ from django.db.models import Q
 class UserRole(models.TextChoices):
     ADMIN = "ADMIN", "Admin"
     MANAGER = "MANAGER", "Manager"
+    AUCTIONEER = "AUCTIONEER", "Auctioneer"
+    VIEWER = "VIEWER", "Viewer"
+
+
+class Project(models.Model):
+    name = models.CharField(max_length=160, unique=True)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return self.name
 
 
 class DraftStatus(models.TextChoices):
@@ -54,6 +70,7 @@ class Team(models.Model):
 
 
 class Category(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="categories", null=True, blank=True)
     name = models.CharField(max_length=32, unique=True)
     sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True, db_index=True)
@@ -66,6 +83,7 @@ class Category(models.Model):
 
 
 class Player(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="players", null=True, blank=True)
     name = models.CharField(max_length=120)
     photo = models.URLField(blank=True)
     category = models.CharField(max_length=32, db_index=True)
