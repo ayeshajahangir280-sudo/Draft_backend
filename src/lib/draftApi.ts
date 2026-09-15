@@ -51,7 +51,7 @@ export type DraftEvent =
       round_completed: boolean;
     };
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "https://draft.stride-events.net";
 export const DEFAULT_DRAFT_ID = Number(import.meta.env.VITE_DRAFT_ID ?? "1");
 
 class TimeoutError extends Error {
