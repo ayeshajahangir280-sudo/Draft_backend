@@ -15,6 +15,9 @@ dist-ssr
 .tanstack/**
 .nitro
 .vercel
+.env
+.env.*
+!.env.example
 *.local
 __pycache__/
 *.py[cod]
