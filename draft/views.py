@@ -199,7 +199,7 @@ class AdminCategoryViewSet(viewsets.ModelViewSet):
 
 
 class AdminTeamViewSet(viewsets.ModelViewSet):
-    queryset = Team.objects.select_related("manager").all()
+    queryset = Team.objects.select_related("manager").order_by("-created_at", "-id")
     serializer_class = TeamSerializer
     permission_classes = [IsAuthenticated, IsAdminRole]
 
