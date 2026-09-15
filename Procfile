@@ -1,1 +1,1 @@
-web: cd backend && daphne -b 0.0.0.0 -p ${PORT:-3000} config.asgi:application
+web: cd backend && python -m daphne -b 0.0.0.0 -p ${PORT:-3000} config.asgi:application

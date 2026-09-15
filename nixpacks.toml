@@ -2,10 +2,10 @@
 NODE_VERSION = "22"
 
 [phases.setup]
-nixPkgs = ["nodejs_22"]
+nixPkgs = ["nodejs_22", "python312", "python312Packages.pip"]
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["npm ci", "python -m pip install -r backend/requirements.txt"]
 
 [phases.build]
 cmds = ["npm run build"]
