@@ -1,1 +1,1 @@
-web: python -m daphne -b 0.0.0.0 -p ${PORT:-3000} config.asgi:application
+web: ../.venv/bin/python -m daphne -b 0.0.0.0 -p ${PORT:-3000} config.asgi:application
