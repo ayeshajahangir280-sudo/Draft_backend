@@ -1,1 +1,1 @@
-web: cd backend && ../.venv/bin/python manage.py migrate --noinput && ../.venv/bin/python -m daphne -b 0.0.0.0 -p ${PORT:-3000} config.asgi:application
+web: cd backend && ../.venv/bin/python manage.py migrate --noinput && ../.venv/bin/python manage.py seed_demo && ../.venv/bin/python -m daphne -b 0.0.0.0 -p ${PORT:-3000} config.asgi:application
