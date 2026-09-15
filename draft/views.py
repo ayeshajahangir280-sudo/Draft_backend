@@ -2,7 +2,7 @@ from django.contrib.auth.models import User
 import csv
 import io
 from openpyxl import load_workbook
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -42,10 +42,19 @@ class AdminUserViewSet(viewsets.ModelViewSet):
     serializer_class = AdminUserSerializer
     permission_classes = [IsAuthenticated, IsAdminRole]
 
+    def perform_destroy(self, instance):
+        if instance.is_staff or instance.is_superuser or getattr(getattr(instance, "profile", None), "role", None) == UserRole.ADMIN:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Admin accounts cannot be deleted.")
+        instance.delete()
+
 class AdminProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
     permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def perform_destroy(self, instance):
+        instance.delete()
 
     @action(detail=True, methods=["get", "post"], url_path="categories")
     def categories(self, request, pk=None):
@@ -53,7 +62,10 @@ class AdminProjectViewSet(viewsets.ModelViewSet):
         if request.method == "POST":
             serializer = CategorySerializer(data={**request.data, "project_id": project.id})
             serializer.is_valid(raise_exception=True)
-            category = Category.objects.create(project=project, name=serializer.validated_data["name"], sort_order=serializer.validated_data.get("sort_order", 0))
+            try:
+                category = Category.objects.create(project=project, name=serializer.validated_data["name"], sort_order=serializer.validated_data.get("sort_order", 0))
+            except IntegrityError:
+                return Response({"detail": "A category with this name already exists in this project."}, status=400)
             return Response(CategorySerializer(category).data, status=201)
         return Response(CategorySerializer(project.categories.all(), many=True).data)
 
@@ -230,8 +242,7 @@ class AdminCategoryViewSet(viewsets.ModelViewSet):
         return queryset.filter(is_active=True) if self.request.query_params.get("active") == "true" else queryset
 
     def perform_destroy(self, instance):
-        instance.is_active = False
-        instance.save(update_fields=["is_active"])
+        instance.delete()
 
 
 class AdminTeamViewSet(viewsets.ModelViewSet):
@@ -244,8 +255,7 @@ class AdminTeamViewSet(viewsets.ModelViewSet):
         return queryset.filter(is_active=True) if self.request.query_params.get("active") == "true" else queryset
 
     def perform_destroy(self, instance):
-        instance.is_active = False
-        instance.save(update_fields=["is_active", "updated_at"])
+        instance.delete()
 
 
 class AdminPlayerViewSet(viewsets.ModelViewSet):
@@ -272,8 +282,7 @@ class AdminPlayerViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_destroy(self, instance):
-        instance.is_active = False
-        instance.save(update_fields=["is_active", "updated_at"])
+        instance.delete()
 
     @action(detail=False, methods=["post"], url_path="import")
     def import_players(self, request):
@@ -343,3 +352,10 @@ class AdminManagerViewSet(viewsets.ViewSet):
             Team.objects.filter(manager=user).update(manager=None)
             Team.objects.filter(id=request.data["team_id"]).update(manager=user)
         return Response(UserSerializer(user).data)
+
+    def destroy(self, request, pk=None):
+        user = User.objects.get(pk=pk)
+        if getattr(getattr(user, "profile", None), "role", None) != UserRole.MANAGER:
+            return Response({"detail": "Only manager accounts can be deleted here."}, status=400)
+        user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

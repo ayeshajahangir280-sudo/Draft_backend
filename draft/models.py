@@ -71,12 +71,13 @@ class Team(models.Model):
 
 class Category(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="categories", null=True, blank=True)
-    name = models.CharField(max_length=32, unique=True)
+    name = models.CharField(max_length=32)
     sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:
         ordering = ["sort_order", "name"]
+        constraints = [models.UniqueConstraint(fields=["project", "name"], name="unique_category_name_per_project")]
 
     def __str__(self):
         return self.name
