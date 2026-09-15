@@ -27,7 +27,7 @@ class AdminUserSerializer(serializers.ModelSerializer):
     role_name = serializers.CharField(source="profile.role", read_only=True)
     class Meta:
         model = User
-        fields = ["id", "username", "email", "first_name", "last_name", "password", "role", "role_name", "is_active"]
+        fields = ["id", "username", "password", "role", "role_name", "is_active"]
     def create(self, validated_data):
         role = validated_data.pop("role", UserRole.MANAGER)
         password = validated_data.pop("password", None)
