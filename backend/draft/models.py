@@ -39,6 +39,7 @@ class Team(models.Model):
     name = models.CharField(max_length=120, unique=True)
     short = models.CharField(max_length=12, blank=True)
     logo = models.ImageField(upload_to="team-logos/", blank=True, null=True)
+    is_active = models.BooleanField(default=True, db_index=True)
     manager = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="managed_team"
     )
@@ -52,10 +53,25 @@ class Team(models.Model):
         return self.name
 
 
+class Category(models.Model):
+    name = models.CharField(max_length=32, unique=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+
 class Player(models.Model):
     name = models.CharField(max_length=120)
     photo = models.URLField(blank=True)
     category = models.CharField(max_length=32, db_index=True)
+    category_ref = models.ForeignKey(
+        Category, on_delete=models.PROTECT, null=True, blank=True, related_name="players"
+    )
     playing_role = models.CharField(max_length=64)
     is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -109,6 +125,15 @@ class DraftTeam(models.Model):
 
     def __str__(self):
         return f"{self.team} in {self.draft}"
+
+
+class DraftPlayer(models.Model):
+    draft = models.ForeignKey(Draft, on_delete=models.CASCADE, related_name="draft_players")
+    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name="draft_entries")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["draft", "player"], name="unique_player_per_draft_pool")]
 
 
 class DraftRound(models.Model):

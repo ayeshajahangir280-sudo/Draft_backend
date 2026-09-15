@@ -1,6 +1,6 @@
 from django.db.models import Prefetch
 
-from .models import Draft, DraftPick, DraftRound, DraftStatus, DraftTurn, Player, RoundStatus
+from .models import Category, Draft, DraftPick, DraftPlayer, DraftRound, DraftStatus, DraftTurn, Player, RoundStatus
 from .serializers import DraftSerializer, PickSerializer, PlayerSerializer, TeamSerializer, TurnSerializer
 
 
@@ -25,7 +25,10 @@ def get_draft_state(draft_id, request=None):
     turns = list(round_obj.turns.all()) if round_obj else []
     current_turn = next((t for t in turns if t.status == "ACTIVE"), None)
     picked_player_ids = set(DraftPick.objects.filter(draft=draft).values_list("player_id", flat=True))
-    available_players = Player.objects.filter(is_active=True, category=draft.active_category).exclude(id__in=picked_player_ids)
+    pool_ids = DraftPlayer.objects.filter(draft=draft).values("player_id")
+    available_players = Player.objects.filter(
+        is_active=True, category=draft.active_category, id__in=pool_ids
+    ).exclude(id__in=picked_player_ids)
     latest_pick = (
         DraftPick.objects.filter(draft=draft)
         .select_related("player", "team", "round")
@@ -61,6 +64,7 @@ def get_draft_state(draft_id, request=None):
         "draft": DraftSerializer(draft).data,
         "revision": draft.revision,
         "active_category": draft.active_category,
+        "categories": list(Category.objects.filter(is_active=True).values_list("name", flat=True)),
         "current_round": round_obj.round_number if round_obj else draft.current_round,
         "current_turn": TurnSerializer(current_turn, context={"request": request}).data if current_turn else None,
         "turn_order": TurnSerializer(turns, many=True, context={"request": request}).data,

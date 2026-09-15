@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
 
-from draft.models import Draft, DraftTeam, Player, Team, UserProfile, UserRole
+from draft.models import Category, Draft, DraftPlayer, DraftTeam, Player, Team, UserProfile, UserRole
 
 
 TEAMS = [
@@ -67,13 +67,17 @@ class Command(BaseCommand):
             DraftTeam.objects.get_or_create(draft=draft, team=team, manager=manager)
 
         for i, (name, category, role) in enumerate(PLAYERS, start=1):
-            Player.objects.update_or_create(
+            Category.objects.get_or_create(name=category, defaults={"sort_order": ord(category) - ord("A")})
+            category_obj = Category.objects.get(name=category)
+            player, _ = Player.objects.update_or_create(
                 name=name,
                 defaults={
                     "category": category,
+                    "category_ref": category_obj,
                     "playing_role": role,
                     "photo": f"https://i.pravatar.cc/400?img={(i % 60) + 11}",
                     "is_active": True,
                 },
             )
+            DraftPlayer.objects.get_or_create(draft=draft, player=player)
         self.stdout.write(self.style.SUCCESS("Seeded demo users, teams, players, and draft."))
