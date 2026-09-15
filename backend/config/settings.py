@@ -13,6 +13,9 @@ ALLOWED_HOSTS = [host.strip() for host in os.getenv(
     "DJANGO_ALLOWED_HOSTS",
     os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver"),
 ).split(",") if host.strip()]
+for host in ("draft.stride-events.net", "draft-backend-u1huta.1.ygd3wxf1cj53ser4ja1ldo432.ondigitalocean.app"):
+    if host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(host)
 
 INSTALLED_APPS = [
     "daphne",
