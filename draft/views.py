@@ -54,11 +54,11 @@ class DraftViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = DraftSerializer
     permission_classes = [IsAuthenticated]
 
-    @action(detail=True, methods=["get"], permission_classes=[AllowAny])
+    @action(detail=True, methods=["get"])
     def state(self, request, pk=None):
         return Response(get_draft_state(pk, request=request))
 
-    @action(detail=True, methods=["get"], url_path="available-players", permission_classes=[AllowAny])
+    @action(detail=True, methods=["get"], url_path="available-players")
     def available_players(self, request, pk=None):
         state = get_draft_state(pk, request=request)
         return Response({"revision": state["revision"], "players": state["available_players"]})
