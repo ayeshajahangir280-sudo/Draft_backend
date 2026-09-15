@@ -2,7 +2,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from .models import Draft, DraftPick, DraftRound, DraftTeam, DraftTurn, Player, Team, UserRole
+from .models import Category, Draft, DraftPick, DraftRound, DraftTeam, DraftTurn, Player, Team, UserRole
 
 
 def absolute_media_url(request, value):
@@ -15,10 +15,11 @@ def absolute_media_url(request, value):
 class UserSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source="profile.role", read_only=True)
     team_id = serializers.IntegerField(source="managed_team.id", read_only=True, default=None)
+    active = serializers.BooleanField(source="is_active", read_only=True)
 
     class Meta:
         model = User
-        fields = ["id", "username", "first_name", "last_name", "role", "team_id"]
+        fields = ["id", "username", "first_name", "last_name", "role", "team_id", "active"]
 
 
 class LoginSerializer(serializers.Serializer):
@@ -42,13 +43,20 @@ class TeamSerializer(serializers.ModelSerializer):
     manager_id = serializers.IntegerField(source="manager.id", read_only=True)
     manager_name = serializers.CharField(source="manager.username", read_only=True, default="")
     logo = serializers.SerializerMethodField()
+    logo_file = serializers.ImageField(source="logo", write_only=True, required=False)
 
     class Meta:
         model = Team
-        fields = ["id", "name", "short", "logo", "manager_id", "manager_name"]
+        fields = ["id", "name", "short", "logo", "logo_file", "manager_id", "manager_name", "is_active"]
 
     def get_logo(self, obj):
         return absolute_media_url(self.context.get("request"), obj.logo)
+
+
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = ["id", "name", "sort_order", "is_active"]
 
 
 class PlayerSerializer(serializers.ModelSerializer):
@@ -56,7 +64,8 @@ class PlayerSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Player
-        fields = ["id", "name", "photo", "category", "role"]
+        fields = ["id", "name", "photo", "category", "category_ref", "role", "is_active"]
+    category_ref = serializers.PrimaryKeyRelatedField(read_only=True)
 
 
 class DraftSerializer(serializers.ModelSerializer):

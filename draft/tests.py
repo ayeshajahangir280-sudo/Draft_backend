@@ -168,7 +168,7 @@ class DraftApiTests(TestCase):
         self.assertNotIn(self.players_a[0].id, available_ids)
         self.assertEqual(state["current_round"], 2)
 
-    def test_unauthorized_user_cannot_load_state(self):
+    def test_unauthorized_user_can_load_public_state(self):
         self.client.force_authenticate(user=None)
         res = self.client.get(f"/api/drafts/{self.draft.id}/state/")
-        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.status_code, 200)

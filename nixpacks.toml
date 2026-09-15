@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["python312", "python312Packages.pip"]
+
+[phases.install]
+cmds = ["python -m venv .venv", ".venv/bin/pip install -r requirements.txt"]
+
+[start]
+cmd = ".venv/bin/python manage.py migrate --noinput && .venv/bin/python manage.py seed_demo && .venv/bin/python -m daphne -b 0.0.0.0 -p ${PORT:-3000} config.asgi:application"
