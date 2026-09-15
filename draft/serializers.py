@@ -83,10 +83,11 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class PlayerSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source="playing_role")
+    category_name = serializers.CharField(source="category_ref.name", read_only=True, default="")
 
     class Meta:
         model = Player
-        fields = ["id", "project", "name", "photo", "category", "category_ref", "role", "is_active"]
+        fields = ["id", "project", "name", "photo", "category", "category_ref", "category_name", "role", "is_active"]
     category_ref = serializers.PrimaryKeyRelatedField(read_only=True)
 
 
